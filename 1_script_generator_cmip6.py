@@ -1,5 +1,4 @@
 import os
-import pandas as pd
 import subprocess
 
 # List of URLs for the different nodes to try
@@ -18,7 +17,6 @@ main_path = r'/nas/home/vlw/Desktop/STREAM/data-download-files'  # <-- PLEASE SE
 # -----------------------------------------------
 
 # Constructing paths based on the main path
-path_CMIP6_gcms = os.path.join(main_path, 'CMIP6_gcms_list.xlsx')
 path_out = os.path.join(main_path, 'wget_scripts')
 
 # Create output directory if it doesn't exist
@@ -26,11 +24,16 @@ if not os.path.exists(path_out):
     os.makedirs(path_out)
     print(f"Directory created: {path_out}")
 
-# Reading the Excel file with the GCM list
-df = pd.read_excel(path_CMIP6_gcms, index_col=0)
-df.index = df.index.str.strip()
-df['GCMs'] = df['GCMs'].str.strip()
-gcms = df['GCMs'].tolist()
+# Hardcoded list of GCMs based on the folder structure
+# Reading from CMIP6_gcms_list.xlsx is no longer necessary
+gcms = [
+    'HadGEM3-GC31-MM', 'E3SM-1-0', 'CNRM-ESM2-1', 'CNRM-CM6-1', 'CNRM-CM6-1-HR',
+    'BCC-CSM2-MR', 'UKESM1-0-LL', 'NorESM2-MM', 'MRI-ESM2-0', 'MPI-ESM1-2-LR',
+    'MPI-ESM1-2-HR', 'MIROC-ES2L', 'KIOST-ESM', 'KACE-1-0-G', 'IPSL-CM6A-LR',
+    'INM-CM5-0', 'INM-CM4-8', 'IITM-ESM', 'HadGEM3-GC31-LL', 'GFDL-ESM4',
+    'EC-Earth3', 'EC-Earth3-Veg-LR', 'EC-Earth3-CC', 'CMCC-ESM2', 'CMCC-CM2-SR5',
+    'CESM2', 'CESM2-WACCM', 'CanESM5', 'ACCESS-ESM1-5', 'ACCESS-CM2'
+]
 
 # --- Configuration ---
 experiments = ['historical', 'ssp585']
