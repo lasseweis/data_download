@@ -16,3 +16,4 @@ __pycache__/
 # dass Gigabytes an Daten auf GitHub landen.
 /data/
 /reloclim/
+/wget_scripts
