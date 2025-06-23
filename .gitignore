@@ -1,0 +1,15 @@
+# .gitignore
+
+# Log- und temporäre Dateien ignorieren
+*.txt
+*.log
+
+# Python-Cache ignorieren
+__pycache__/
+*.pyc
+
+# Ignoriere alle heruntergeladenen Daten.
+# Dieser Eintrag ist entscheidend, um zu verhindern,
+# dass Gigabytes an Daten auf GitHub landen.
+/data/
+/reloclim/
