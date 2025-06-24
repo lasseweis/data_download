@@ -3,7 +3,7 @@
 # Log- und temporäre Dateien ignorieren
 *.txt
 *.log
-
+*.zip
 # Python-Cache ignorieren
 __pycache__/
 *.pyc
@@ -17,3 +17,4 @@ __pycache__/
 /data/
 /reloclim/
 /wget_scripts
+/final_wget_files
