@@ -1,48 +1,41 @@
-# 3_download_CMIP6.py
 import os
 import pexpect
+import re
 from multiprocessing import Pool, cpu_count
 
-# NEUER SPEICHERORT, wo die von Skript 2 aufbereiteten Ordner liegen
+# Der übergeordnete Ordner, wo die von Skript 2/3 aufbereiteten Ordner liegen
 script_source_dir = '/nas/home/vlw/Desktop/STREAM/data-download-files/'
 # ======================================================================
 
-# Definieren Sie hier Ihre Zielordner für jede Variable
+# Definieren der Zielordner für jede Variable (unverändert)
 target_dirs = {
-    'pr': '/data/users/vlw/paper1-cmip-data/pr',
-    'tas': '/data/users/vlw/paper1-cmip-data/tas',
-    'ua': '/data/users/vlw/paper1-cmip-data/ua'
+    'pr': '/data/reloclim/normal/CMIP6_STREAM/paper1-cmip-data/pr',
+    'tas': '/data/reloclim/normal/CMIP6_STREAM/paper1-cmip-data/tas',
+    'ua': '/data/reloclim/normal/CMIP6_STREAM/paper1-cmip-data/ua'
 }
 
-# Konfiguration der zu ladenden Daten
-table_id = 'Amon'
-variables_to_download = ['pr', 'tas', 'ua']
-exps = ['historical', 'ssp585']
+# WICHTIG: Anmeldedaten sicher verwalten (unverändert)
+OPENID = '1'
+PASSWORD = '2'
 
-# Ihre Modell-Liste
-gcms = [
-    'HadGEM3-GC31-MM', 'E3SM-1-0', 'CNRM-ESM2-1', 'CNRM-CM6-1', 'CNRM-CM6-1-HR',
-    'BCC-CSM2-MR', 'UKESM1-0-LL', 'NorESM2-MM', 'MRI-ESM2-0', 'MPI-ESM1-2-LR',
-    'MPI-ESM1-2-HR', 'MIROC-ES2L', 'KIOST-ESM', 'KACE-1-0-G', 'IPSL-CM6A-LR',
-    'INM-CM5-0', 'INM-CM4-8', 'IITM-ESM', 'HadGEM3-GC31-LL', 'GFDL-ESM4',
-    'EC-Earth3', 'EC-Earth3-Veg-LR', 'EC-Earth3-CC', 'CMCC-ESM2', 'CMCC-CM2-SR5',
-    'CESM2', 'CESM2-WACCM', 'CanESM5', 'ACCESS-ESM1-5', 'ACCESS-CM2'
-]
+# ======================================================================
+# Die `download_task` Funktion ist gut konzipiert und bleibt unverändert.
+# Sie wird jetzt mit dynamisch gefundenen Jobs aufgerufen.
+# ======================================================================
+def download_task(job):
+    """Führt den Download für einen spezifischen Job aus."""
+    gcm = job['gcm']
+    exp = job['exp']
+    var = job['var']
+    table_id = job['table_id']
 
-# Anmeldedaten aus Umgebungsvariablen laden
-OPENID = 'aaa'
-PASSWORD = 'ESGF_PASSWORD'
-
-def download_task(args):
-    """Führt den Download für eine spezifische Kombination aus."""
-    gcm, exp, var = args
-
-    if not OPENID or not PASSWORD:
+    if not OPENID or OPENID == 'aaa' or not PASSWORD:
         print("FEHLER: ESGF_OPENID oder ESGF_PASSWORD nicht als Umgebungsvariable gesetzt.")
         return
 
     download_dir = target_dirs.get(var)
     if not download_dir:
+        print(f"WARNUNG: Kein Zielverzeichnis für Variable '{var}' definiert. Überspringe.")
         return
 
     os.makedirs(download_dir, exist_ok=True)
@@ -51,13 +44,14 @@ def download_task(args):
     script_path = os.path.join(script_dir, f'wget_{var}.sh')
 
     if not os.path.exists(script_path):
+        print(f"INFO: Skriptpfad nicht gefunden, überspringe: {script_path}")
         return
 
     print(f"Starte Download für: {gcm} - {exp} - {var} --> Ziel: {download_dir}")
-    log_file_path = os.path.join(download_dir, f'download_log_{gcm}_{exp}_{var}.txt')
+    log_file_path = os.path.join(download_dir, f'download_log_AUTO_{gcm}_{exp}_{var}.txt')
 
     try:
-        child = pexpect.spawn(f'bash {script_path} -s', cwd=download_dir, timeout=600)
+        child = pexpect.spawn(f'bash {script_path}', cwd=download_dir, timeout=3600) # Timeout auf 1h erhöht
         child.logfile_read = open(log_file_path, "wb")
         
         patterns = ['Enter your openid :', 'Enter password :', pexpect.EOF, pexpect.TIMEOUT]
@@ -70,18 +64,53 @@ def download_task(args):
 
         child.expect(pexpect.EOF)
         child.close()
+        if child.exitstatus == 0:
+            print(f"-> ERFOLGREICH abgeschlossen: {gcm} - {exp} - {var}")
+        else:
+            print(f"-> FEHLGESCHLAGEN (Exit-Code: {child.exitstatus}): {gcm} - {exp} - {var}. Siehe Log: {log_file_path}")
+
+    except pexpect.TIMEOUT:
+        print(f"-> TIMEOUT bei {gcm} - {exp} - {var}. Siehe Log: {log_file_path}")
     except Exception as e:
-        print(f"Ein Fehler ist aufgetreten bei {gcm} - {exp} - {var}: {e}")
+        print(f"-> Ein FEHLER ist aufgetreten bei {gcm} - {exp} - {var}: {e}")
 
+# ======================================================================
+# <<< GEÄNDERT: Hauptteil zur automatischen Erfassung der Aufgaben >>>
+# ======================================================================
 if __name__ == "__main__":
-    tasks = [(gcm, exp, var) for gcm in gcms for exp in exps for var in variables_to_download]
     
-    if not tasks:
-        print("Keine Aufgaben zum Herunterladen gefunden.")
-    else:
-        num_workers = min(len(tasks), cpu_count(), 8)
-        print(f"Starte {len(tasks)} Download-Aufgaben mit {num_workers} parallelen Prozessen...")
-        with Pool(processes=num_workers) as pool:
-            pool.map(download_task, tasks)
+    print("Starte automatische Erfassung der Download-Aufgaben...")
+    jobs_to_run = []
+    
+    # Durchsuche das Quellverzeichnis nach Ordnern, die von Skript 3 erstellt wurden
+    for dirname in os.listdir(script_source_dir):
+        dir_path = os.path.join(script_source_dir, dirname)
+        if os.path.isdir(dir_path):
+            # Parse den Ordnernamen, z.B. "CNRM-CM6-1-HR.ssp585.Amon"
+            parts = dirname.split('.')
+            if len(parts) >= 3:
+                gcm = parts[0]
+                exp = parts[1]
+                table_id = '.'.join(parts[2:]) # fängt auch table_ids mit Punkten ab
+                
+                # Suche in diesem Ordner nach wget_{var}.sh Skripten
+                for script_filename in os.listdir(dir_path):
+                    match = re.match(r'wget_(pr|tas|ua)\.sh', script_filename)
+                    if match:
+                        var = match.group(1)
+                        job = {'gcm': gcm, 'exp': exp, 'var': var, 'table_id': table_id}
+                        jobs_to_run.append(job)
+                        print(f"  [+] Aufgabe gefunden: {gcm} - {exp} - {var}")
 
-    print("Alle Download-Aufgaben abgeschlossen.")
+    if not jobs_to_run:
+        print("\nKeine Aufgaben zum Herunterladen gefunden. Alles scheint erledigt zu sein.")
+    else:
+        # Bestimme die Anzahl der parallelen Prozesse
+        num_workers = min(len(jobs_to_run), cpu_count(), 8)
+        print(f"\n{len(jobs_to_run)} Download-Aufgaben gefunden. Starte mit {num_workers} parallelen Prozessen...")
+        
+        # Starte die Downloads parallel mit der dynamisch erstellten Liste
+        with Pool(processes=num_workers) as pool:
+            pool.map(download_task, jobs_to_run)
+
+    print("\nAlle Download-Aufgaben abgeschlossen.")
